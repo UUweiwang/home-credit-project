@@ -1,0 +1,15 @@
+/.quarto/
+**/*.quarto_ipynb
+# Raw data
+application_train-1.csv
+application_test.csv
+
+# Prepared data
+application_train_prepared.csv
+application_test_prepared.csv
+
+# README preview files
+README.html
+README_files/
+
+Home_Credit_Default_Risk_EDA.html
