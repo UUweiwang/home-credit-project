@@ -13,3 +13,11 @@ README.html
 README_files/
 
 Home_Credit_Default_Risk_EDA.html
+
+home_credit_submission.csv
+home_credit_modeling.html
+
+**/__pycache__/
+**/*.pyc
+
+Home_Credit_Default_Risk_EDA.qmd

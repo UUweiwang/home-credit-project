@@ -155,7 +155,65 @@ The script will:
 
 ## Project Files
 
+## Project Files
+
 - `Home_Credit_Default_Risk_EDA.qmd` — exploratory data analysis
 - `data_preparation.R` — reusable data preparation and feature-engineering script
+- `home_credit_modeling.qmd` — modeling experiments, model comparison, tuning, and Kaggle submission
+- `modeling_utils.py` — reusable modeling functions for feature engineering, preprocessing, and model evaluation
 - `README.md` — project documentation
 - `.gitignore` — prevents raw and generated data files from being committed to GitHub
+
+## Modeling
+
+### Modeling
+
+The modeling notebook uses Python.
+
+Required Python packages include:
+
+- pandas
+- numpy
+- scikit-learn
+
+Open `home_credit_modeling.qmd` in Positron and run the Python code cells in order.
+
+The modeling notebook will:
+
+1. Load the prepared training and test datasets.
+2. Create additional engineered features.
+3. Build the preprocessing pipeline.
+4. Evaluate candidate models using 3-fold stratified cross-validation and ROC AUC.
+5. Tune the selected logistic regression model.
+6. Refit the final model using the full training dataset.
+7. Generate `home_credit_submission.csv` for Kaggle submission.
+
+### Models Evaluated
+
+Three modeling approaches were compared:
+
+- Logistic Regression: **Mean CV AUC = 0.7188**
+- Balanced Logistic Regression: **Mean CV AUC = 0.7138**
+- Random Forest: **Mean CV AUC = 0.7137**
+
+The baseline logistic regression achieved the highest mean cross-validation AUC among the initial candidate models.
+
+### Hyperparameter Tuning
+
+Randomized search was used to tune the logistic regression model. The best configuration was:
+
+- `C = 0.01`
+- `class_weight = None`
+
+The tuned logistic regression achieved a mean cross-validation ROC AUC of approximately **0.7308**.
+
+### Final Model and Kaggle Result
+
+The tuned logistic regression model was retrained using the full training dataset and used to generate predicted default probabilities for the Kaggle test set.
+
+The final Kaggle submission achieved:
+
+- **Public ROC AUC: 0.73969**
+- **Private ROC AUC: 0.73645**
+
+The Kaggle results were reasonably consistent with the cross-validation performance, suggesting that the final model generalized well to unseen data.

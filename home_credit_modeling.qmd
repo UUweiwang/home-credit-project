@@ -1,0 +1,577 @@
+---
+title: "Home Credit Default Risk: Modeling"
+subtitle: "Modeling experiments using cross-validation and ROC AUC"
+author: "Victoria Wang"
+date: today
+
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    embed-resources: true
+    theme: cosmo
+
+jupyter: python3
+
+execute:
+  echo: true
+  warning: false
+  error: false
+  cache: false
+---
+
+# Purpose
+
+This notebook develops and evaluates predictive models for the Home Credit Default Risk project.
+
+The goal is to predict the probability that a client will have difficulty repaying a loan (`TARGET = 1`).
+
+# Setup
+
+```{python}
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.linear_model import LogisticRegression
+
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.ensemble import RandomForestClassifier
+from modeling_utils import (
+    add_engineered_features,
+    build_preprocessor,
+    evaluate_model
+)
+
+print("Python setup completed.")
+```
+
+# Load Prepared Data
+
+```{python}
+TRAIN_PATH = Path("application_train_prepared.csv")
+TEST_PATH = Path("application_test_prepared.csv")
+
+print("Train file exists:", TRAIN_PATH.exists())
+print("Test file exists:", TEST_PATH.exists())
+
+train = pd.read_csv(TRAIN_PATH)
+test = pd.read_csv(TEST_PATH)
+
+print("Training shape:", train.shape)
+print("Test shape:", test.shape)
+
+
+```
+
+# Gate 0 — Data Integrity Check
+
+Before modeling, basic integrity checks are performed to confirm that IDs are valid and the training and test datasets are properly separated.
+
+```{python}
+print("Train duplicate IDs:",
+      train["SK_ID_CURR"].duplicated().sum())
+
+print("Test duplicate IDs:",
+      test["SK_ID_CURR"].duplicated().sum())
+
+print("Train missing IDs:",
+      train["SK_ID_CURR"].isna().sum())
+
+print("Test missing IDs:",
+      test["SK_ID_CURR"].isna().sum())
+
+train_ids = set(train["SK_ID_CURR"])
+test_ids = set(test["SK_ID_CURR"])
+
+overlap = train_ids.intersection(test_ids)
+
+print("Overlapping train/test IDs:", len(overlap))
+```
+
+## Target Distribution
+
+The target distribution is checked because class imbalance may affect model training and evaluation.
+
+```{python}
+print("TARGET counts:")
+print(train["TARGET"].value_counts())
+
+print("\nTARGET proportions:")
+print(train["TARGET"].value_counts(normalize=True))
+```
+The target variable is highly imbalanced. Approximately **91.9%** of observations have `TARGET = 0`, while only **8.1%** have `TARGET = 1`. Because of this imbalance, model evaluation will focus on **ROC AUC** rather than accuracy alone, and stratified cross-validation will be used to preserve the target distribution across folds.
+
+
+# Gate 1 — Feature Engineering
+
+A small set of interpretable ratio features is created from the prepared application data. These features express loan amounts relative to income and other financial quantities.
+
+```{python}
+
+
+
+train_model = add_engineered_features(train)
+test_model = add_engineered_features(test)
+
+print("Training columns after feature engineering:",
+      train_model.shape[1])
+
+print("Test columns after feature engineering:",
+      test_model.shape[1])
+```
+
+# Gate 2 — Define Target and Predictors
+
+`TARGET` is the binary outcome variable. `SK_ID_CURR` is an identifier and is therefore excluded from model predictors.
+
+```{python}
+X = train_model.drop(
+    columns=["TARGET", "SK_ID_CURR"]
+)
+
+y = train_model["TARGET"]
+
+X_test = test_model.drop(
+    columns=["SK_ID_CURR"]
+)
+
+print("Training predictors:", X.shape)
+print("Target:", y.shape)
+print("Test predictors:", X_test.shape)
+
+engineered_features = [
+    "CREDIT_INCOME_RATIO",
+    "ANNUITY_INCOME_RATIO",
+    "CREDIT_TERM_RATIO",
+    "EMPLOYED_BIRTH_RATIO"
+]
+
+for col in engineered_features:
+    print(col, "already in prepared data:", col in train.columns)
+```
+
+## Identify Variable Types
+
+Numeric and categorical variables require different preprocessing strategies.
+
+```{python}
+numeric_features = X.select_dtypes(
+    include=np.number
+).columns.tolist()
+
+categorical_features = [
+    col for col in X.columns
+    if col not in numeric_features
+]
+
+print("Numeric features:",
+      len(numeric_features))
+
+print("Categorical features:",
+      len(categorical_features))
+```
+The modeling dataset contains **116 numeric predictors** and **17 categorical predictors**. These variable types are processed separately in the preprocessing pipeline because numeric and categorical features require different transformations.
+
+
+## Check Feature Alignment
+
+```{python}
+missing_in_test = set(X.columns) - set(X_test.columns)
+extra_in_test = set(X_test.columns) - set(X.columns)
+
+print("Features missing in test:",
+      missing_in_test)
+
+print("Extra features in test:",
+      extra_in_test)
+```
+The training and test datasets contain the same predictor variables. No features are missing from or added to the test set, confirming that the datasets are aligned for modeling.
+
+# Gate 3 — Preprocessing Pipeline
+
+Preprocessing is performed inside the modeling pipeline so that transformations are learned only from the training portion of each cross-validation fold. This helps reduce data leakage.
+
+Numeric predictors are median-imputed and standardized. Categorical predictors are imputed using the most frequent value and then one-hot encoded.
+
+```{python}
+preprocessor = build_preprocessor(X)
+
+print("Preprocessing pipeline created.")
+```
+The preprocessing pipeline was created successfully. Numeric and categorical predictors will be processed separately during model fitting to handle missing values, scaling, and categorical encoding.
+
+# Modeling Exploration Sample
+
+A stratified sample is used during model exploration to reduce computation time while approximately preserving the original target distribution.
+
+```{python}
+sample_size = 10000
+
+sample_fraction = (
+    sample_size / len(train_model)
+)
+
+sample_index = (
+    train_model
+    .groupby(
+        "TARGET",
+        group_keys=False
+    )
+    .sample(
+        frac=sample_fraction,
+        random_state=42
+    )
+    .index
+)
+
+X_sample = X.loc[sample_index]
+y_sample = y.loc[sample_index]
+
+print("Sample size:",
+      len(X_sample))
+
+print("\nSample TARGET proportions:")
+print(
+    y_sample.value_counts(
+        normalize=True
+    )
+)
+```
+The 10,000-row exploration sample closely preserves the original target distribution, with approximately **91.9%** non-default cases and **8.1%** default cases. This makes the sample suitable for faster model comparison while maintaining the class imbalance present in the full dataset.
+
+# Cross-Validation Strategy
+
+Three-fold stratified cross-validation is used during model exploration. Stratification helps maintain a similar default rate in each fold.
+
+```{python}
+cv = StratifiedKFold(
+    n_splits=3,
+    shuffle=True,
+    random_state=42
+)
+
+print("3-fold stratified CV created.")
+
+```
+Three-fold stratified cross-validation was successfully created. Stratification helps preserve the original default rate in each fold, supporting a more reliable comparison of model performance.
+
+# Gate 4 — Baseline Logistic Regression
+
+Logistic regression is used as the baseline classification model. ROC AUC is used as the primary evaluation metric because the target is imbalanced.
+
+```{python}
+logistic_model = LogisticRegression(
+    max_iter=500,
+    solver="liblinear",
+    random_state=42
+)
+
+logistic_pipeline = Pipeline(
+    steps=[
+        (
+            "preprocessor",
+            preprocessor
+        ),
+        (
+            "model",
+            logistic_model
+        )
+    ]
+)
+
+logistic_scores = evaluate_model(
+    logistic_model,
+    preprocessor,
+    X_sample,
+    y_sample,
+    cv
+)
+
+print("Fold AUC scores:",
+      logistic_scores)
+
+print("Mean CV AUC:",
+      logistic_scores.mean())
+
+print("AUC standard deviation:",
+      logistic_scores.std())
+```
+The baseline logistic regression achieved a mean 3-fold cross-validation ROC AUC of approximately **0.719**. The fold-level AUC scores ranged from about **0.706 to 0.734**, with a relatively small standard deviation of **0.011**, suggesting reasonably stable performance across folds.
+
+This score provides the baseline benchmark for evaluating alternative modeling strategies.
+
+# Class Imbalance Experiment
+
+Because approximately 8% of observations belong to the positive class, a class-weighted logistic regression is compared with the baseline model.
+
+```{python}
+balanced_logistic = LogisticRegression(
+    max_iter=500,
+    solver="liblinear",
+    class_weight="balanced",
+    random_state=42
+)
+
+balanced_pipeline = Pipeline(
+    steps=[
+        (
+            "preprocessor",
+            preprocessor
+        ),
+        (
+            "model",
+            balanced_logistic
+        )
+    ]
+)
+
+balanced_scores = cross_val_score(
+    balanced_pipeline,
+    X_sample,
+    y_sample,
+    cv=cv,
+    scoring="roc_auc",
+    n_jobs=1
+)
+
+print("Balanced Logistic Mean AUC:",
+      balanced_scores.mean())
+```
+The class-weighted logistic regression achieved a mean ROC AUC of approximately **0.7138**, compared with approximately **0.7188** for the baseline logistic regression.
+
+The class-weighted model therefore performed slightly worse on this exploration sample, suggesting that `class_weight="balanced"` did not improve ROC AUC in this experiment.
+
+# Candidate Model — Random Forest
+
+A random forest model is evaluated as a nonlinear alternative to logistic regression.
+
+```{python}
+rf_model = RandomForestClassifier(
+    n_estimators=100,
+    max_depth=10,
+    min_samples_leaf=5,
+    class_weight="balanced_subsample",
+    random_state=42,
+    n_jobs=1
+)
+
+rf_pipeline = Pipeline(
+    steps=[
+        (
+            "preprocessor",
+            preprocessor
+        ),
+        (
+            "model",
+            rf_model
+        )
+    ]
+)
+
+rf_scores = cross_val_score(
+    rf_pipeline,
+    X_sample,
+    y_sample,
+    cv=cv,
+    scoring="roc_auc",
+    n_jobs=1
+)
+
+print("Random Forest Fold AUC:",
+      rf_scores)
+
+print("Random Forest Mean AUC:",
+      rf_scores.mean())
+```
+
+The random forest model achieved a mean 3-fold cross-validation ROC AUC of approximately **0.7137**. This is slightly lower than the baseline logistic regression AUC of **0.7188** and very similar to the balanced logistic regression AUC of **0.7138**.
+
+Based on this exploration sample, the random forest did not outperform the simpler baseline logistic regression.
+
+# Model Comparison
+
+Candidate models are compared using mean cross-validation ROC AUC.
+
+```{python}
+results = pd.DataFrame({
+    "Model": [
+        "Logistic Regression",
+        "Balanced Logistic Regression",
+        "Random Forest"
+    ],
+    "Mean CV AUC": [
+        logistic_scores.mean(),
+        balanced_scores.mean(),
+        rf_scores.mean()
+    ],
+    "AUC SD": [
+        logistic_scores.std(),
+        balanced_scores.std(),
+        rf_scores.std()
+    ]
+})
+
+results = results.sort_values(
+    "Mean CV AUC",
+    ascending=False
+)
+
+results
+```
+Among the three candidate models, the baseline logistic regression achieved the highest mean cross-validation ROC AUC at **0.7188**. The balanced logistic regression and random forest achieved similar but slightly lower mean AUC values of **0.7138** and **0.7137**, respectively.
+
+Although the random forest showed the smallest variation across folds, the baseline logistic regression provided the strongest overall predictive performance at this stage. Therefore, logistic regression is carried forward for hyperparameter tuning.
+
+# Gate 5 — Hyperparameter Tuning
+
+Randomized search is used to explore logistic regression regularization and class weighting while limiting computation cost.
+
+```{python}
+tuning_pipeline = Pipeline(
+    steps=[
+        (
+            "preprocessor",
+            preprocessor
+        ),
+        (
+            "model",
+            LogisticRegression(
+                max_iter=500,
+                solver="liblinear",
+                random_state=42
+            )
+        )
+    ]
+)
+
+param_distributions = {
+    "model__C": [
+        0.01,
+        0.05,
+        0.1,
+        0.5,
+        1,
+        2,
+        5,
+        10
+    ],
+    "model__class_weight": [
+        None,
+        "balanced"
+    ]
+}
+
+random_search = RandomizedSearchCV(
+    estimator=tuning_pipeline,
+    param_distributions=param_distributions,
+    n_iter=10,
+    scoring="roc_auc",
+    cv=cv,
+    random_state=42,
+    n_jobs=1,
+    verbose=1
+)
+
+random_search.fit(
+    X_sample,
+    y_sample
+)
+
+print("Best parameters:")
+print(random_search.best_params_)
+
+print("\nBest CV AUC:")
+print(random_search.best_score_)
+```
+The randomized search identified `C = 0.01` and `class_weight = None` as the best logistic regression configuration. This model achieved a mean cross-validation ROC AUC of approximately **0.7308**, improving on the baseline logistic regression AUC of **0.7188**.
+
+The result also supports the earlier class-imbalance experiment, since the best-performing configuration did not use class weighting. This tuned logistic regression is therefore carried forward as the final model candidate.
+
+
+
+
+# Gate 6 — Final Model
+
+The randomized search identified `C = 0.01` and `class_weight = None` as the best logistic regression configuration, with a mean cross-validation ROC AUC of approximately **0.7308** on the exploration sample.
+
+This tuned logistic regression model is now refit using the full training dataset before generating predictions for the Kaggle test set.
+
+```{python}
+final_model = random_search.best_estimator_
+
+print("Fitting final model on full training data...")
+
+final_model.fit(
+    X,
+    y
+)
+
+print("Final model training completed.")
+```
+
+The tuned logistic regression model was successfully refit using the full training dataset and is ready to generate predicted probabilities for the Kaggle test set.
+
+# Gate 7 — Generate Kaggle Predictions
+
+The final model is used to generate predicted default probabilities for the Kaggle test set.
+
+```{python}
+test_probabilities = final_model.predict_proba(X_test)[:, 1]
+
+print("Number of predictions:", len(test_probabilities))
+print(
+    "Prediction range:",
+    test_probabilities.min(),
+    "to",
+    test_probabilities.max()
+)
+```
+The final model generated **48,744 predicted probabilities**, matching the number of observations in the test dataset. Predicted default probabilities ranged from approximately **0.0011 to 0.9093**, indicating substantial variation in estimated credit risk across applicants.
+
+# Create Kaggle Submission
+
+The predicted probabilities are saved in the format required for Kaggle submission.
+
+```{python}
+submission = pd.DataFrame({
+    "SK_ID_CURR": test_model["SK_ID_CURR"],
+    "TARGET": test_probabilities
+})
+
+submission.to_csv(
+    "home_credit_submission.csv",
+    index=False
+)
+
+print("Submission shape:", submission.shape)
+submission.head()
+
+print(
+    "ID order matches test set:",
+    submission["SK_ID_CURR"].equals(
+        test_model["SK_ID_CURR"].reset_index(drop=True)
+    )
+)
+```
+The Kaggle submission file contains **48,744 rows** and the required two columns, `SK_ID_CURR` and `TARGET`. The `TARGET` column contains predicted default probabilities from the final tuned logistic regression model.
+The submission IDs exactly match the test dataset order, confirming that predicted probabilities are correctly aligned with the corresponding applicants.
+
+## Kaggle Result
+
+The final tuned logistic regression model was submitted to the Home Credit Default Risk competition on Kaggle.
+
+The submission achieved:
+
+- **Public ROC AUC: 0.73969**
+- **Private ROC AUC: 0.73645**
+
+These scores are reasonably consistent with the tuned cross-validation ROC AUC of approximately **0.7308** obtained during model development. The Kaggle results provide additional evidence that the final model generalizes beyond the exploration sample.
+
