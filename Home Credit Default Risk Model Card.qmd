@@ -1,0 +1,689 @@
+---
+title: "Home Credit Default Risk Model Card"
+author: "Wei Wang"
+
+format:
+  html:
+    toc: true
+    embed-resources: true
+
+jupyter: python3
+
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+## Executive Summary
+
+This model estimates the probability that a Home Credit applicant will experience repayment difficulty. A tuned logistic regression model was selected because it provided competitive predictive performance while remaining relatively interpretable for credit-risk decision support.
+
+The final model achieved a mean cross-validation ROC AUC of **0.7308**, with Kaggle Public and Private ROC AUC scores of **0.73969** and **0.73645**, respectively. These results indicate reasonably consistent discrimination performance across development and external evaluation data.
+
+A business-cost sensitivity analysis identified an **18% decision threshold** as the value-maximizing cutoff under the stated financial assumptions. At this threshold, approximately **91.24% of applicants are approved**, the default rate among approved applicants is approximately **6.35%**, and the normalized business value score on the 10,000-row evaluation sample reaches **940.6**. The selected threshold is also close to the theoretical break-even default probability of **18.95%**.
+
+SHAP analysis shows that loan amount, goods price, external risk scores, and payment burden relative to income are among the most influential predictors. However, gender-related information also contributes to model predictions. The fairness analysis shows an approval rate of **93.77% for female applicants** and **86.26% for male applicants**, indicating a need for additional fair-lending and governance review.
+
+The model therefore shows useful predictive and business value but **should not be deployed as an automated lending decision system in its current form**. Before production use, protected characteristics should be reviewed, the model should be retrained and reassessed for fairness, and the decision threshold should be recalibrated using Home Credit's actual loan-level profitability and loss data.
+
+
+## Model Details
+
+### Model Overview
+
+This model predicts the probability that a Home Credit loan applicant will experience repayment difficulty (`TARGET = 1`). The final model is a tuned **logistic regression classifier** selected after comparison with balanced logistic regression and random forest alternatives.
+
+**Model type:** Logistic Regression    
+**Model version:** 1.0  
+**Prediction target:** Probability of repayment difficulty (`TARGET = 1`)  
+**Modeling framework:** Python / scikit-learn  
+
+### Training Data
+
+The model was developed using the Home Credit Default Risk training data. The original training dataset contains **307,511 loan applications and 122 variables**, including applicant characteristics, financial information, loan characteristics, and the binary repayment outcome.
+
+The target is highly imbalanced: approximately **8.1%** of applicants experienced repayment difficulty (`TARGET = 1`), while approximately **91.9%** did not (`TARGET = 0`).
+
+After data preparation and feature engineering, the modeling dataset included **116 numeric predictors and 17 categorical predictors**. The applicant identifier (`SK_ID_CURR`) was excluded from the predictor set.
+
+Four interpretable ratio features were included in the modeling workflow:
+
+- Credit-to-income ratio
+- Annuity-to-income ratio
+- Credit-term ratio
+- Employment-to-age ratio
+
+### Preprocessing
+
+Preprocessing was incorporated into the modeling pipeline to reduce the risk of data leakage.
+
+- Numeric variables were imputed using the median and standardized.
+- Categorical variables were imputed using the most frequent category and one-hot encoded.
+- Preprocessing transformations were learned within the modeling pipeline rather than applied to the full dataset before model evaluation.
+
+### Key Model Settings
+
+The final logistic regression configuration was selected through randomized hyperparameter search.
+
+- Regularization parameter (`C`): **0.01**
+- Class weighting: **None**
+- Solver: **liblinear**
+- Maximum iterations: **500**
+- Primary model-selection metric: **ROC AUC**
+- Cross-validation approach: **3-fold stratified cross-validation**
+
+The tuned model was subsequently refit using the full training dataset before generating final predictions.
+
+## Intended Use
+
+### Intended Users
+
+This model is intended to support **Home Credit lending and credit-risk teams**, including credit analysts, underwriters, and risk managers who evaluate loan applications and monitor portfolio risk.
+
+### Intended Decision Support
+
+The model estimates the probability that an applicant will experience repayment difficulty. Its predictions are intended to support:
+
+- Credit-risk screening of loan applications
+- Identification of higher-risk applicants who may require additional review
+- Prioritization of manual underwriting resources
+- Consistent comparison of applicant risk across the lending portfolio
+
+The model should be used as a **decision-support tool** rather than as a replacement for professional judgment.
+
+### Out-of-Scope Uses
+
+The model is not designed to:
+
+- Serve as the sole basis for automatically approving or declining a loan without appropriate review and controls
+- Determine loan pricing, interest rates, or credit limits
+- Establish causal relationships between applicant characteristics and repayment outcomes
+- Be applied to populations, products, or time periods that differ substantially from the data on which it was developed without additional validation
+- Replace legal, compliance, or fair-lending review
+
+## Performance Metrics
+
+### Discrimination Performance
+
+- **Mean cross-validation ROC AUC:** 0.7308
+- **Kaggle Public ROC AUC:** 0.73969
+- **Kaggle Private ROC AUC:** 0.73645
+
+The similarity between cross-validation and Kaggle performance suggests reasonably consistent predictive performance on held-out evaluation data.
+
+### Classification Performance at the Selected Threshold
+
+
+- **Selected threshold:**18%
+- **Precision:**26.03%
+- **Recall:** 28.25% 
+
+Precision indicates that approximately 26% of applicants identified as high risk at this threshold actually experienced repayment difficulty. Recall indicates that the model identifies approximately 28% of all applicants who ultimately experienced repayment difficulty.
+
+These metrics should be interpreted together with the approval rate and expected business value because the objective is not simply to maximize classification performance, but to balance credit risk with profitable lending opportunities.
+
+## Decision Threshold Analysis
+
+
+### Business Cost Assumptions
+
+The decision-threshold analysis requires assumptions about the economic value of approving a loan that is repaid and the potential loss associated with approving a loan that defaults.
+
+Home Credit Group reported a **15.5% net interest margin in 2019**, which is used here as an approximate measure of the economic return generated by a performing loan ([Home Credit Group, 2019](https://www.homecredit.net/wp-content/uploads/2022/12/HC-Group-BV-IFRS-2019-4Q-incl.-unsigned-report.pdf)). The same report showed a **cost of risk of 8.6%** and a non-performing-loan ratio of 5.6%.
+
+Home Credit does not provide a directly comparable loan-level recovery rate in the available financial disclosure. Therefore, an external benchmark is used only for scenario analysis. Federal Reserve research reports a post-default recovery value of approximately **33.7%** for direct lending, corresponding to an approximate **66.3% loss given default (LGD)** ([Cai & Haque, 2024](https://www.federalreserve.gov/econres/notes/feds-notes/private-credit-characteristics-and-risks-20240223.html)).
+
+For the threshold analysis, the following normalized assumptions are therefore used per $1 of lending exposure:
+
+- **Loan repaid:** +$0.155
+- **Loan defaults:** −$0.663
+- **Loan declined:** $0
+- **Recovery-rate benchmark:** 33.7%
+
+These values are modeling assumptions used to compare alternative decision thresholds. They should not be interpreted as Home Credit's actual realized profit or recovery rate. A production deployment would require Home Credit's internal loan-level margin, recovery, servicing-cost, and loss data.
+
+### Threshold Sensitivity Analysis
+
+```{python}
+#| label: threshold-analysis
+
+import pandas as pd
+import numpy as np
+
+from pathlib import Path
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import precision_score, recall_score
+
+from modeling_utils import add_engineered_features, build_preprocessor
+
+
+# ---------------------------------------------------
+# 1. Load the prepared training data
+# ---------------------------------------------------
+
+train = pd.read_csv("application_train_prepared.csv")
+
+train_model = add_engineered_features(train)
+
+X = train_model.drop(columns=["TARGET", "SK_ID_CURR"])
+y = train_model["TARGET"]
+
+
+# ---------------------------------------------------
+# 2. Recreate the 10,000-row stratified sample
+# ---------------------------------------------------
+
+sample_size = 10000
+sample_fraction = sample_size / len(train_model)
+
+sample_index = (
+    train_model
+    .groupby("TARGET", group_keys=False)
+    .sample(
+        frac=sample_fraction,
+        random_state=42
+    )
+    .index
+)
+
+X_sample = X.loc[sample_index]
+y_sample = y.loc[sample_index]
+
+
+# ---------------------------------------------------
+# 3. Recreate preprocessing and final model
+# ---------------------------------------------------
+
+preprocessor = build_preprocessor(X_sample)
+
+threshold_model = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        (
+            "model",
+            LogisticRegression(
+                C=0.01,
+                class_weight=None,
+                max_iter=500,
+                solver="liblinear",
+                random_state=42
+            )
+        )
+    ]
+)
+
+
+# ---------------------------------------------------
+# 4. Generate out-of-fold predicted probabilities
+# ---------------------------------------------------
+
+cv = StratifiedKFold(
+    n_splits=3,
+    shuffle=True,
+    random_state=42
+)
+
+oof_prob = cross_val_predict(
+    threshold_model,
+    X_sample,
+    y_sample,
+    cv=cv,
+    method="predict_proba",
+    n_jobs=1
+)[:, 1]
+
+
+# ---------------------------------------------------
+# 5. Business value assumptions
+# ---------------------------------------------------
+
+profit_if_repaid = 0.155
+loss_if_default = 0.663
+
+break_even_probability = (
+    profit_if_repaid /
+    (profit_if_repaid + loss_if_default)
+)
+
+print(
+    "Theoretical break-even default probability:",
+    round(break_even_probability, 4)
+)
+
+
+# ---------------------------------------------------
+# 6. Test alternative decision thresholds
+# ---------------------------------------------------
+
+thresholds = [
+    0.05,
+    0.10,
+    0.15,
+    0.20,
+    0.25,
+    0.30,
+    0.40,
+    0.50
+]
+
+results = []
+
+for threshold in thresholds:
+
+    # Applicants below threshold are approved.
+    approved = oof_prob < threshold
+
+    approved_count = approved.sum()
+    approval_rate = approved.mean()
+
+    repayers_approved = (
+        (approved) & (y_sample.values == 0)
+    ).sum()
+
+    defaulters_approved = (
+        (approved) & (y_sample.values == 1)
+    ).sum()
+
+    if approved_count > 0:
+        approved_default_rate = (
+            defaulters_approved / approved_count
+        )
+    else:
+        approved_default_rate = np.nan
+
+    total_value = (
+        repayers_approved * profit_if_repaid
+        -
+        defaulters_approved * loss_if_default
+    )
+
+    value_per_applicant = (
+        total_value / len(y_sample)
+    )
+
+    # TARGET = 1 means high-risk/default.
+    predicted_default = (
+        oof_prob >= threshold
+    ).astype(int)
+
+    precision = precision_score(
+        y_sample,
+        predicted_default,
+        zero_division=0
+    )
+
+    recall = recall_score(
+        y_sample,
+        predicted_default,
+        zero_division=0
+    )
+
+    results.append({
+        "Threshold": threshold,
+        "Approval Rate": approval_rate,
+        "Approved Loans": approved_count,
+        "Repayers Approved": repayers_approved,
+        "Defaulters Approved": defaulters_approved,
+        "Default Rate Among Approved": approved_default_rate,
+        "Normalized Business Value": total_value,
+        "Value per Applicant": value_per_applicant,
+        "Precision": precision,
+        "Recall": recall
+    })
+
+
+threshold_results = pd.DataFrame(results)
+
+threshold_results
+```
+
+The initial threshold sweep shows a clear trade-off between lending volume and credit risk. Lower thresholds reject more applicants and reduce the default rate among approved loans, but they also exclude many borrowers who would have repaid successfully. As the threshold increases, the approval rate rises, but more defaulters are also approved.
+
+Among the thresholds initially tested, normalized business value increases substantially from the 5% threshold and reaches its highest observed level around the 20% threshold before beginning to decline. This suggests that thresholds that are too conservative sacrifice profitable lending opportunities, while thresholds that are too permissive allow additional default losses to outweigh the value of approving more repaying borrowers.
+
+Because the initial sweep evaluates thresholds in relatively large increments, a finer search is conducted around the best-performing range before selecting the final decision threshold.
+
+```{python}
+# ---------------------------------------------------
+# 7. Refine the search around the best region
+# ---------------------------------------------------
+
+fine_thresholds = np.arange(
+    0.15,
+    0.251,
+    0.01
+)
+
+fine_results = []
+
+for threshold in fine_thresholds:
+
+    approved = oof_prob < threshold
+
+    approved_count = approved.sum()
+    approval_rate = approved.mean()
+
+    repayers_approved = (
+        approved & (y_sample.values == 0)
+    ).sum()
+
+    defaulters_approved = (
+        approved & (y_sample.values == 1)
+    ).sum()
+
+    default_rate = (
+        defaulters_approved / approved_count
+        if approved_count > 0
+        else np.nan
+    )
+
+    total_value = (
+        repayers_approved * profit_if_repaid
+        -
+        defaulters_approved * loss_if_default
+    )
+
+    predicted_default = (
+        oof_prob >= threshold
+    ).astype(int)
+
+    precision = precision_score(
+        y_sample,
+        predicted_default,
+        zero_division=0
+    )
+
+    recall = recall_score(
+        y_sample,
+        predicted_default,
+        zero_division=0
+    )
+
+    fine_results.append({
+        "Threshold": threshold,
+        "Approval Rate": approval_rate,
+        "Default Rate Among Approved": default_rate,
+        "Normalized Business Value": total_value,
+        "Precision": precision,
+        "Recall": recall
+    })
+
+fine_threshold_results = pd.DataFrame(fine_results)
+
+fine_threshold_results
+```
+
+```{python}
+best_row = fine_threshold_results.loc[
+    fine_threshold_results[
+        "Normalized Business Value"
+    ].idxmax()
+]
+
+best_row
+```
+
+
+```{python}
+#| label: threshold-value-plot
+#| fig-cap: "Normalized business value across alternative decision thresholds."
+
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(7, 4))
+
+plt.plot(
+    fine_threshold_results["Threshold"],
+    fine_threshold_results["Normalized Business Value"],
+    marker="o"
+)
+
+plt.xlabel("Decision Threshold")
+plt.ylabel("Normalized Business Value")
+plt.title("Business Value by Decision Threshold")
+
+plt.show()
+
+display(
+    fine_threshold_results.style.format({
+        "Threshold": "{:.0%}",
+        "Approval Rate": "{:.1%}",
+        "Default Rate Among Approved": "{:.1%}",
+        "Normalized Business Value": "{:.1f}",
+        "Precision": "{:.1%}",
+        "Recall": "{:.1%}"
+    })
+)
+```
+
+The business-value curve reaches its highest point at a decision threshold of approximately **18%**, where normalized business value is **940.6**. Below this threshold, the model is more conservative and rejects more applicants who would have repaid successfully. Above this threshold, approval rates continue to increase, but the additional default losses begin to outweigh the value generated by approving more loans.
+
+This pattern supports the selection of the **18% decision threshold** as the business-value-maximizing cutoff under the stated financial assumptions.
+
+### Selected Decision Threshold
+
+The refined sensitivity analysis identified **18%** as the decision threshold that produced the highest normalized business value under the stated lending-cost assumptions.
+
+At this threshold, approximately **91.24% of applicants are approved**, while the default rate among approved applicants is approximately **6.35%**. The model achieves a **precision of 26.03%** and a **recall of 28.25%** for identifying applicants who experience repayment difficulty.
+
+The selected threshold reflects a business trade-off rather than an attempt to maximize predictive accuracy alone. Lower thresholds reduce credit risk but reject more applicants who would have repaid successfully, while higher thresholds increase approval volume but also allow more defaults.
+
+The selected **18% threshold is also close to the theoretical break-even default probability of 18.95%**, providing additional support for the business-based cutoff.
+
+Because the financial assumptions rely partly on portfolio-level Home Credit information and an external recovery-rate benchmark, the 18% threshold should be treated as a **decision-support estimate rather than a permanent production cutoff**. A production threshold should be recalibrated using actual loan-level margins, recovery rates, servicing costs, and default losses.
+
+
+
+## Explainability
+
+SHAP (SHapley Additive exPlanations) was used to examine how individual features contribute to the model's predicted probability of repayment difficulty. Because the final model is a logistic regression model, SHAP values indicate how each transformed feature pushes an applicant's predicted risk higher or lower relative to the model's baseline prediction.
+
+To keep the analysis computationally efficient, SHAP explanations were generated for a reproducible sample of **1,000 applicants**. The analysis is intended to describe the behavior of the fitted model and should not be interpreted as evidence that the identified features causally affect repayment difficulty.
+
+
+```{python}
+#| label: shap-analysis
+#| fig-cap: "SHAP summary of the most influential features in the logistic regression model."
+
+
+import shap
+import matplotlib.pyplot as plt
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+
+# Recreate the selected final model configuration
+shap_model = Pipeline(
+    steps=[
+        ("preprocessor", build_preprocessor(X)),
+        (
+            "model",
+            LogisticRegression(
+                C=0.01,
+                class_weight=None,
+                max_iter=500,
+                solver="liblinear",
+                random_state=42
+            )
+        )
+    ]
+)
+
+# Fit the selected model configuration
+shap_model.fit(X, y)
+
+# Use a 1,000-row sample for SHAP analysis
+X_shap = X.sample(n=1000, random_state=42)
+
+# Apply the fitted preprocessing pipeline
+X_shap_transformed = (
+    shap_model
+    .named_steps["preprocessor"]
+    .transform(X_shap)
+)
+
+# Get transformed feature names
+feature_names = (
+    shap_model
+    .named_steps["preprocessor"]
+    .get_feature_names_out()
+)
+
+# Convert sparse matrix to dense if necessary
+if hasattr(X_shap_transformed, "toarray"):
+    X_shap_transformed = X_shap_transformed.toarray()
+
+# Explain the fitted logistic regression model
+logistic_model = shap_model.named_steps["model"]
+
+explainer = shap.LinearExplainer(
+    logistic_model,
+    X_shap_transformed
+)
+
+shap_values = explainer(X_shap_transformed)
+
+# SHAP summary plot
+shap.summary_plot(
+    shap_values.values,
+    X_shap_transformed,
+    feature_names=feature_names,
+    max_display=15,
+    show=False
+)
+
+plt.tight_layout()
+plt.show()
+
+```
+
+The SHAP summary indicates that **AMT_GOODS_PRICE, AMT_CREDIT, EXT_SOURCE_3, and EXT_SOURCE_2** are among the most influential features in the model's predictions. Higher external credit scores generally push predicted repayment risk lower, while larger credit amounts and higher payment burdens can push predicted risk higher.
+
+The **ANNUITY_INCOME_RATIO** also appears among the important features, indicating that repayment obligations relative to income contribute meaningfully to the model's risk assessment. Importantly, **CODE_GENDER** also appears among the influential predictors, which raises a potential fair-lending concern and will be examined further in the fairness analysis.
+
+These SHAP results describe how the fitted model generates predictions and should not be interpreted as evidence that these characteristics cause repayment difficulty.
+
+## Adverse Action Mapping
+
+The most influential SHAP features were translated into more understandable business explanations that could support manual review or adverse-action communication. These explanations are intended to describe the model's risk signals in plain language rather than expose technical variable names directly.
+
+| Technical Feature | Human-Readable Explanation | Appropriate for Adverse Action? |
+|---|---|---|
+| `AMT_CREDIT` | Requested credit amount contributed to elevated predicted repayment risk. | Yes |
+| `AMT_GOODS_PRICE` | Value of the goods being financed contributed to the model's risk assessment. | Use with caution |
+| `EXT_SOURCE_2` / `EXT_SOURCE_3` | External credit information indicates elevated repayment risk. | Yes |
+| `ANNUITY_INCOME_RATIO` | Required loan payments are high relative to the applicant's income. | Yes |
+| `CODE_GENDER` | Applicant gender contributed to the model prediction. | **No** |
+| `NAME_EDUCATION_TYPE` | Education category contributed to the model prediction. | Use with caution |
+
+Protected or sensitive characteristics such as **gender should not be used as an adverse-action reason**. The presence of `CODE_GENDER` among influential model features raises a fair-lending concern and requires additional review in the fairness analysis.
+
+Adverse-action explanations should be based on specific, understandable, and legally appropriate factors that materially contributed to the individual prediction. The mappings above are simplified examples and would require compliance and legal review before use in a production lending process.
+
+## Fairness Analysis
+This section evaluates whether the selected **18% decision threshold** produces different approval outcomes across demographic groups. Approval rates are compared by **gender** and **education level** to identify potential disparities that may require additional fair-lending review.
+
+### Approval Rates by Gender
+```{python}
+#| label: fairness-analysis
+
+# Create fairness evaluation data using the same 10,000-row sample
+fairness_df = train_model.loc[
+    sample_index,
+    ["CODE_GENDER", "NAME_EDUCATION_TYPE"]
+].copy()
+
+# Align predicted probabilities with the sampled applicants
+fairness_df["Predicted_Default_Probability"] = oof_prob
+
+# Applicants below the selected 18% threshold are approved
+selected_threshold = 0.18
+fairness_df["Approved"] = (
+    fairness_df["Predicted_Default_Probability"] < selected_threshold
+)
+
+# ---------------------------------------------------
+# Approval rates by gender
+# ---------------------------------------------------
+
+gender_fairness = (
+    fairness_df
+    .groupby("CODE_GENDER")
+    .agg(
+        Applicants=("Approved", "size"),
+        Approved=("Approved", "sum"),
+        Approval_Rate=("Approved", "mean")
+    )
+    .reset_index()
+)
+
+gender_fairness["Approval_Rate"] = (
+    gender_fairness["Approval_Rate"] * 100
+)
+
+gender_fairness
+```
+At the selected **18% decision threshold**, the approval rate is approximately **93.77% for female applicants** and **86.26% for male applicants**. This indicates that male applicants receive approvals at a lower rate than female applicants in the evaluation sample.
+
+The observed difference does not by itself establish discrimination, but it indicates a potential fairness concern that should be investigated further, particularly because gender-related information also appeared among the influential SHAP features.
+
+
+### Approval Rates by Education Level
+```{python}
+# ---------------------------------------------------
+# Approval rates by education level
+# ---------------------------------------------------
+
+education_fairness = (
+    fairness_df
+    .groupby("NAME_EDUCATION_TYPE")
+    .agg(
+        Applicants=("Approved", "size"),
+        Approved=("Approved", "sum"),
+        Approval_Rate=("Approved", "mean")
+    )
+    .reset_index()
+    .sort_values("Approval_Rate", ascending=False)
+)
+
+education_fairness["Approval_Rate"] = (
+    education_fairness["Approval_Rate"] * 100
+)
+
+education_fairness
+```
+Approval rates also vary across education groups at the selected **18% threshold**. Applicants with **higher education** have an approval rate of approximately **95.86%**, compared with **90.03%** for secondary / secondary special education, **89.29%** for lower secondary education, and **85.25%** for incomplete higher education.
+
+The academic-degree category shows a 100% approval rate, but this group contains only **three applicants**, so the result is not sufficiently stable for meaningful comparison.
+
+Overall, the results suggest that approval outcomes differ across education groups. These differences do not by themselves demonstrate unfair treatment, but they should be monitored because education may be associated with broader socioeconomic differences in the applicant population.
+
+### Fairness Implications
+The fairness analysis identifies measurable differences in approval outcomes across demographic groups. At the selected **18% threshold**, female applicants have a higher approval rate (**93.77%**) than male applicants (**86.26%**). The male-to-female approval-rate ratio is approximately **92%**, which is above the commonly used four-fifths (80%) screening heuristic. However, this screening result is not evidence that the model is legally or substantively fair, particularly because gender-related information contributes to model predictions.
+
+Approval rates also vary across education groups. Among groups with meaningful sample sizes, applicants with higher education have the highest approval rate (**95.86%**), while applicants with incomplete higher education have the lowest approval rate (**85.25%**). These differences should be interpreted cautiously because education may be associated with broader socioeconomic characteristics.
+
+Importantly, gender-related information also appeared among the influential SHAP features. Therefore, even though the observed approval-rate ratio does not fall below the 80% screening threshold, the use of gender information in the model requires additional governance and fair-lending review before deployment. A production model should evaluate whether protected characteristics should be removed and whether model performance and fairness remain acceptable after retraining. 
+
+
+## Limitations and Risks
+
+The model should be interpreted as a decision-support tool rather than a fully automated lending decision system. Several limitations should be considered before operational use.
+
+First, the model was developed using the Home Credit Default Risk dataset and may not generalize to different borrower populations, loan products, economic conditions, or future time periods without additional validation.
+
+Second, repayment difficulty is relatively rare in the training data, representing approximately **8.1%** of applicants. Although ROC AUC and stratified cross-validation were used to evaluate performance, the class imbalance limits the model's ability to identify all applicants who eventually experience repayment difficulty.
+
+Third, the selected **18% decision threshold** is based on simplified financial assumptions. The assumed return on repaid loans is derived from portfolio-level financial information, while the recovery-rate assumption relies on an external benchmark. Actual deployment should use Home Credit's internal loan-level profitability, recovery, servicing-cost, and default-loss data.
+
+Fourth, SHAP analysis shows that **gender-related information contributes to model predictions**. This raises a potential fair-lending and governance concern. Protected or sensitive characteristics should not be used as adverse-action reasons, and the role of these variables should be reviewed before deployment.
+
+Finally, SHAP explanations describe how the fitted model generates predictions but do not establish causal relationships between applicant characteristics and repayment outcomes. Model performance, fairness, calibration, and threshold selection should be monitored and periodically reassessed after deployment.
+
+## References
+
+Home Credit Group B.V. (2019). *2019 Annual Financial Report.*
+
+Cai, F., & Haque, S. (2024). *Private Credit: Characteristics and Risks.* Board of Governors of the Federal Reserve System.
+
