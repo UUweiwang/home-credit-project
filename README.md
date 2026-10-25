@@ -217,3 +217,17 @@ The final Kaggle submission achieved:
 - **Private ROC AUC: 0.73645**
 
 The Kaggle results were reasonably consistent with the cross-validation performance, suggesting that the final model generalized well to unseen data.
+
+## Final Model Card
+
+The final model card summarizes the Home Credit default-risk model, including model performance, business decision-threshold analysis, SHAP explainability, adverse-action mapping, fairness analysis, and deployment limitations.
+
+### Key Results
+- Final model: Tuned Logistic Regression
+- Mean CV ROC AUC: 0.7308
+- Kaggle Public AUC: 0.73969
+- Kaggle Private AUC: 0.73645
+- Selected decision threshold: 18%
+- Approval rate at selected threshold: 91.24%
+
+[View the Final Model Card](Home_Credit_Default_Risk_Model_Card.html)
