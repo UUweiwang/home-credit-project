@@ -1,0 +1,366 @@
+---
+title: "Home Credit Default Risk - Exploratory Data Analysis"
+author: "Wei Wang"
+format:
+  html:
+    embed-resources: true
+---
+
+## 1. Business Problem
+
+Home Credit provides loans to individuals who may have limited or insufficient credit histories. A key business challenge is identifying applicants who are more likely to experience difficulty repaying their loans. Better understanding the characteristics associated with repayment risk can help support more informed lending decisions and risk management.
+
+In this project, the target variable indicates whether an applicant experienced repayment difficulties. This exploratory data analysis examines applicant characteristics, data quality, missingness, and relationships with the target. The findings will be used to identify potentially useful variables and guide feature selection and modeling decisions in the next stage of the project.
+
+## 2. Data Overview 
+
+```{r}
+
+# Loaded the required R package and imported the training dataset and checked the dimensions of the dataset to identify the number of observations and variables.
+
+library(tidyverse)
+credit <- read_csv("application_train-1.csv")
+dim(credit)
+```
+
+```{r}
+# The following code provides a quick overview of the dataset structure and variable types.
+glimpse(credit)
+```
+The training dataset contains 307,511 loan applications and 122 variables. The variables include numerical measures, categorical applicant characteristics, loan information, and the binary target variable indicating repayment difficulty. Because the dataset contains a large number of features, this EDA will focus on data quality and selected variables that may show meaningful relationships with the target.
+
+## 3. Target Variable
+### Target Distribution
+
+```{r}
+# The following code examines the frequency and proportion of each TARGET class.
+table(credit$TARGET)
+
+prop.table(table(credit$TARGET))
+
+```
+TARGET = 1 represents applicants with repayment difficulties, while TARGET = 0 represents applicants without repayment difficulties. The target variable is highly imbalanced, with only about 8% of applicants in the TARGET = 1 group.
+
+
+```{r}
+# Visualize the distribution of the target variable.
+credit %>%
+  count(TARGET) %>%
+  ggplot(aes(x = factor(TARGET), y = n)) +
+  geom_col() +
+  labs(
+    title = "Distribution of the Target Variable",
+    x = "TARGET",
+    y = "Number of Applicants"
+  )
+
+```
+The visualization confirms the strong class imbalance in the target variable. This imbalance may need to be considered when evaluating predictive models later in the project.
+
+## 4. Missingness
+
+```{r}
+# examined the proportion of missing values across variables to identify potential data quality issues.
+
+# Calculate the missing-value proportion for each variable.
+missing_summary <- credit %>%
+  summarise(across(everything(), ~ mean(is.na(.)))) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "missing_rate"
+  ) %>%
+  arrange(desc(missing_rate))
+
+head(missing_summary, 10)
+
+```
+Several variables have very high missing rates, with the top variables missing approximately 68% to 70% of observations. Many of these variables are related to housing or apartment characteristics.
+
+### Missingness by TARGET 
+To determine whether missingness may contain useful information, I compared the missing rates of all variables across the two TARGET groups.
+
+```{r}
+# Compare missing rates between TARGET = 0 and TARGET = 1 for all variables.
+
+missing_by_target <- credit %>%
+  
+  # Calculate the missing rate of each variable within each TARGET group.
+  group_by(TARGET) %>%
+  summarise(
+    across(everything(), ~ mean(is.na(.)))
+  ) %>%
+  
+  # Reshape the results so TARGET = 0 and TARGET = 1 can be compared directly.
+  pivot_longer(
+    cols = -TARGET,
+    names_to = "variable",
+    values_to = "missing_rate"
+  ) %>%
+  pivot_wider(
+    names_from = TARGET,
+    values_from = missing_rate,
+    names_prefix = "TARGET_"
+  ) %>%
+  
+  # Calculate and rank the difference in missing rates between the two groups.
+  mutate(
+    difference = abs(TARGET_1 - TARGET_0)
+  ) %>%
+  arrange(desc(difference))
+
+# Display the 10 variables with the largest differences.
+head(missing_by_target, 10)
+
+```
+Applicants with TARGET = 1 generally have more missing information in several housing-related variables than applicants with TARGET = 0. The difference is around 7 to 8 percentage points for the variables with the largest gaps. This suggests that missing housing information may be related to repayment difficulty and could be useful to consider in later modeling.
+
+## 5. Numerical Variable Exploration
+
+### AMT_INCOME_TOTAL by TARGET 
+
+examined whether applicant income differs between applicants with and without repayment difficulties.
+
+```{r}
+# Compare applicant income between the two TARGET groups.
+
+credit %>%
+  group_by(TARGET) %>%
+  summarise(
+    mean_income = mean(AMT_INCOME_TOTAL, na.rm = TRUE),
+    median_income = median(AMT_INCOME_TOTAL, na.rm = TRUE)
+  )
+```
+Applicants with TARGET = 1 have a somewhat lower median income than those with TARGET = 0. However, the difference is not very large, suggesting that income alone may not strongly distinguish applicants who experience repayment difficulties.
+
+
+```{r}
+# Examine the distribution of applicant income and identify extreme values.
+
+quantile(
+  credit$AMT_INCOME_TOTAL,
+  probs = c(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1),
+  na.rm = TRUE
+)
+```
+Applicant income increases gradually across the 25th to 99th percentiles, but the maximum value is dramatically higher than the 99th percentile. This suggests the presence of extreme high-income outliers, which may strongly influence the mean and distort visualizations of the income distribution.
+
+```{r}
+# Compare income distributions between the two TARGET groups.
+credit %>%
+  ggplot(aes(
+    x = factor(TARGET),
+    y = AMT_INCOME_TOTAL
+  )) +
+  geom_boxplot() +
+  coord_cartesian(
+    ylim = c(
+      0,
+      quantile(credit$AMT_INCOME_TOTAL, 0.99, na.rm = TRUE)
+    )
+  ) +
+  labs(
+    title = "Applicant Income by TARGET",
+    x = "TARGET",
+    y = "Total Income"
+  )
+```
+  Applicants with TARGET = 1 tend to have slightly lower income, but the difference between the two groups is not large.
+
+### Applicant Age by TARGET
+```{r}
+# Convert DAYS_BIRTH into age in years.
+credit <- credit %>%
+  mutate(
+    AGE_YEARS = -DAYS_BIRTH / 365.25
+  )
+
+  # Compare age between the two TARGET groups.
+credit %>%
+  group_by(TARGET) %>%
+  summarise(
+    mean_age = mean(AGE_YEARS, na.rm = TRUE),
+    median_age = median(AGE_YEARS, na.rm = TRUE)
+  )
+
+credit %>%
+  ggplot(aes(
+    x = factor(TARGET),
+    y = AGE_YEARS,
+    fill = factor(TARGET)
+  )) +
+  geom_boxplot(alpha = 0.8, width = 0.6) +
+  scale_x_discrete(
+    labels = c(
+      "0" = "No Repayment Difficulty",
+      "1" = "Repayment Difficulty"
+    )
+  ) +
+  scale_fill_manual(
+    values = c(
+      "0" = "#B7E4C7",   # Light green
+      "1" = "#F4A261"    #  Orang
+    ),
+    labels = c(
+      "0" = "No Repayment Difficulty",
+      "1" = "Repayment Difficulty"
+    )
+  ) +
+  labs(
+    title = "Age Distributions Differ by Repayment Outcome",
+    x = NULL,
+    y = "Age (Years)",
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 10),
+    legend.position = "none"
+  )
+```
+ Applicants with TARGET = 1 tend to be younger than those with TARGET = 0, as shown by the lower median age and overall lower age distribution. This suggests that younger age may be associated with a higher risk of repayment difficulty.
+
+### AMT_CREDIT by TARGET
+```{r}
+# Compare credit amount between TARGET groups.
+credit %>%
+  group_by(TARGET) %>%
+  summarise(
+    mean_credit = mean(AMT_CREDIT, na.rm = TRUE),
+    median_credit = median(AMT_CREDIT, na.rm = TRUE)
+  )
+```
+ Applicants with TARGET = 1 tend to have slightly lower credit amounts than those with TARGET = 0, The difference between the two groups is relatively small, suggesting that credit amount alone may not strongly distinguish applicants with repayment difficulties.
+
+
+### Credit-to-Income Ratio
+
+```{r}
+ # Create a credit-to-income ratio.
+credit <- credit %>%
+  mutate(
+    CREDIT_INCOME_RATIO = AMT_CREDIT / AMT_INCOME_TOTAL
+  )
+
+credit %>%
+  group_by(TARGET) %>%
+  summarise(
+    median_credit_income_ratio =
+      median(CREDIT_INCOME_RATIO, na.rm = TRUE)
+  )
+```
+The median credit-to-income ratio is very similar between TARGET = 0 and TARGET = 1 (3.27 vs. 3.25), suggesting that this ratio does not show a clear difference between applicants with and without repayment difficulties.
+
+## 6. Categorical Variable Exploration
+### Education
+
+```{r}
+# Calculate repayment difficulty rate by education level.
+education_summary <- credit %>%
+  group_by(NAME_EDUCATION_TYPE) %>%
+  summarise(
+    applicants = n(),
+    target_rate = mean(TARGET)
+  ) %>%
+  arrange(desc(target_rate))
+
+education_summary
+```
+
+```{r}
+education_summary %>%
+  ggplot(
+    aes(
+      x = reorder(NAME_EDUCATION_TYPE, target_rate),
+      y = target_rate
+    )
+  ) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Repayment Difficulty Rate by Education Level",
+    x = "Education Level",
+    y = "TARGET = 1 Rate"
+  )
+```
+Applicants with lower education levels tend to have higher repayment difficulty rates, suggesting that education level may be associated with repayment risk.
+
+
+```{r}
+credit %>%
+  group_by(NAME_EDUCATION_TYPE) %>%
+  summarise(
+    sample_size = n(),
+    repayment_difficulty_count = sum(TARGET == 1, na.rm = TRUE),
+    repayment_difficulty_rate = mean(TARGET == 1, na.rm = TRUE)
+  ) %>%
+  arrange(desc(repayment_difficulty_rate))
+  
+```
+The pattern generally shows higher repayment difficulty rates among lower education levels, although the Academic degree group has a very small sample size and should be interpreted cautiously.
+
+### Income Type
+```{r}
+# Calculate repayment difficulty rate by income type.
+income_type_summary <- credit %>%
+  group_by(NAME_INCOME_TYPE) %>%
+  summarise(
+    applicants = n(),
+    target_rate = mean(TARGET)
+  ) %>%
+  arrange(desc(target_rate))
+
+income_type_summary
+```
+Among the major income groups, working applicants have the highest repayment difficulty rate, followed by commercial associates, while state servants and pensioners have lower rates. Very high or zero rates in small groups should be interpreted cautiously because of their limited sample sizes.
+
+### Housing Type
+```{r}
+# Calculate repayment difficulty rate by housing type.
+housing_summary <- credit %>%
+  group_by(NAME_HOUSING_TYPE) %>%
+  summarise(
+    applicants = n(),
+    target_rate = mean(TARGET)
+  ) %>%
+  arrange(desc(target_rate))
+
+housing_summary
+```
+Applicants living in rented apartments or with parents have higher repayment difficulty rates than those living in a house or apartment. This suggests that housing type may be associated with repayment risk, This is a descriptive relationship and should not be interpreted as causal.
+
+## 7. Results and Key Findings
+
+### Data Characteristics and Quality Issues
+
+The EDA identified several important data quality issues. First, the TARGET variable is highly imbalanced, with only about 8% of applicants experiencing repayment difficulties. Several housing-related variables also contain substantial missingness, with some variables missing nearly 70% of observations. In addition, applicant income contains extreme high-value outliers, which can strongly influence the mean and distort visualizations.
+
+Missingness itself may also contain useful information. For several housing-related variables, applicants with TARGET = 1 had missing rates approximately 7 to 8 percentage points higher than applicants with TARGET = 0. This suggests that whether housing information is missing may itself be associated with repayment difficulty.
+
+### Key Relationships with TARGET
+
+Several variables showed meaningful patterns with repayment difficulty. Applicants with TARGET = 1 tended to be younger than applicants with TARGET = 0, suggesting that age may be an informative predictor. Education level also showed differences in repayment difficulty rates, with lower education levels generally having higher rates. Housing type and income type also showed differences across applicant groups, although categories with small sample sizes should be interpreted cautiously.
+
+Other variables showed weaker relationships. Applicant income was somewhat lower among TARGET = 1 applicants, but the difference between the two groups was relatively small. Credit amount was also only slightly different between the groups. The credit-to-income ratio was nearly the same for TARGET = 0 and TARGET = 1, suggesting that this engineered feature may not provide strong separation on its own.
+
+### Implications for Modeling
+
+These findings suggest several considerations for the next stage of the project. Age, education level, income type, and housing type may be useful features to include in predictive models. Because missingness in some housing variables differs by TARGET, creating missing-value indicators may also be useful rather than treating missing values only as a data-cleaning problem.
+
+The extreme income values may require transformation or other robust treatment before modeling. The strong class imbalance in TARGET should also be considered when evaluating model performance, because accuracy alone may provide a misleading picture of model quality. Finally, variables that showed only small differences between TARGET groups, such as credit amount and the credit-to-income ratio, may still contribute when combined with other variables but appear to have limited predictive value when considered individually.
+
+
+## 8. Use of AI
+
+I used the instructor’s slides and assignment guidelines as the main framework for this EDA. The slides provided suggestions about what to examine, such as the target variable, missingness, numerical and categorical variables, and relationships with the target. I then used ChatGPT to help turn these suggestions into a more detailed EDA plan for the Home Credit dataset.
+
+During the analysis, ChatGPT helped me understand R functions, generate and troubleshoot code, and interpret the outputs. I discussed the results with AI step by step and used the actual data results to decide which relationships were meaningful and which were relatively weak.
+
+Overall, AI helped me apply the ideas from the course materials more efficiently and helped me better understand the reasoning behind each step of the EDA.
+
+
+
+
+
