@@ -1,233 +1,100 @@
-# Home Credit Default Risk Project
+# Home Credit Default Risk | Credit Risk Analytics Portfolio
 
-## Author
-Wei Wang
+**Author:** Wei Wang  
+**Project:** Home Credit Default Risk (Kaggle)  
+**Focus:** Exploratory Data Analysis · Feature Engineering · Predictive Modeling · Model Explainability · Business Decision Support
 
-## Project Description
+## Project Overview: Business Problem and Objective
 
-This project analyzes the Home Credit Default Risk dataset to better understand applicant characteristics associated with repayment difficulty and to prepare the data for predictive modeling.
+Lenders must balance two competing goals: extending credit to eligible applicants and managing the losses associated with repayment difficulty. A model that ranks borrowers by risk can support more consistent screening, but predictive accuracy alone does not determine whether a lending strategy is commercially useful.
 
-The exploratory data analysis (EDA) identified important data quality issues and relationships with the target variable. The data preparation script translates those findings into reusable cleaning and feature-engineering steps that are applied consistently to both the training and test datasets.
+This project uses the **Home Credit Default Risk** dataset to investigate factors associated with repayment difficulty and develop a transparent credit-risk prediction workflow. My objectives were to:
 
-## Data Preparation Script
+- Explore borrower characteristics and data-quality challenges.
+- Build reproducible preprocessing and feature-engineering workflows.
+- Compare and tune classification models using **stratified cross-validation** and **ROC AUC**.
+- Translate model probabilities into an illustrative business decision using a threshold and explicit financial assumptions.
+- Examine interpretability, fairness, and practical limitations before considering deployment.
 
-The `data_preparation.R` script performs the following transformations:
+## My Solution
 
-### 1. Applicant Age
+**1. Exploratory data analysis (EDA).** I investigated repayment difficulty across applicant attributes such as age, education, income, and housing; checked missing values and unusual codes; and examined class imbalance (approximately **8.1%** of training applicants had repayment difficulty).
 
-`DAYS_BIRTH` is stored as a negative number of days before the loan application date. The script converts it into a more interpretable variable:
+**2. Data preparation.** I used an R script to derive interpretable variables including applicant age, employment years, credit-to-income ratio, log income, age groups, and missingness indicators. Rules depending on dataset statistics were learned from the training data and reused for the test data. I also checked consistent feature columns and duplicate applicant IDs.
 
-`AGE_YEARS`
+**3. Predictive modeling.** I compared logistic regression, class-weighted logistic regression, and random forest. The modeling workflow used preprocessing pipelines, including missing-value imputation and categorical encoding, to support consistent model evaluation. I then tuned logistic regression using stratified cross-validation.
 
-This transformation was based on the EDA finding that applicants with repayment difficulties tended to be younger.
+**4. Decision support and model review.** I examined predicted probabilities using a business-oriented decision threshold, assessed explanations using SHAP, and discussed subgroup fairness and deployment limitations in a model card. The proposed model is **decision support**, not a fully autonomous lending approval system.
 
-### 2. Employment Duration
+## Results
 
-`DAYS_EMPLOYED` is converted from days into years.
+| Model or evaluation | ROC AUC |
+|---|---:|
+| Baseline logistic regression — mean CV | 0.7188 |
+| Balanced logistic regression — mean CV | 0.7138 |
+| Random forest — mean CV | 0.7137 |
+| Tuned logistic regression — mean CV | **0.7308** |
+| Final Kaggle public leaderboard | **0.73969** |
+| Final Kaggle private leaderboard | **0.73645** |
 
-The value `365243` was identified as an unrealistic special value rather than a valid employment duration. These observations are treated as missing before creating:
+The selected model was **logistic regression** (`C = 0.01`, `class_weight = None`). Its Kaggle AUC scores were reasonably close to the cross-validation result, providing encouraging evidence of performance on the competition's held-out data. These scores do not, by themselves, establish production readiness.
 
-`EMPLOYMENT_YEARS`
+## Business Value
 
-### 3. Credit-to-Income Ratio
+In a lending setting, a predicted probability becomes useful only when it informs a decision rule and the trade-offs of that rule are understood. I evaluated an illustrative **18% risk threshold** instead of relying on a conventional 50% classification cutoff.
 
-The script creates:
+Under the project's **simplified financial assumptions**, the 18% threshold yielded approximately **5.7% higher normalized business value** than the 50% threshold on a **10,000-row evaluation sample**. The model card reports an **approval rate of 91.24%** at the selected threshold. These results are **scenario estimates**, not observed lender profits or a validated production policy.
 
-`CREDIT_INCOME_RATIO = AMT_CREDIT / AMT_INCOME_TOTAL`
+The practical takeaway is that **model quality and business value are different questions**: AUC measures ranking ability, while approval thresholds determine how a model might affect lending decisions and financial outcomes. Any real implementation would need lender-specific returns, losses, operating costs, policy constraints, and additional fairness and compliance review.
 
-The EDA showed that this ratio had only a small difference between TARGET groups, but it was retained because it may still provide useful information when combined with other predictors.
+## Challenges and How I Addressed Them
 
-### 4. Missing-Value Indicators
+- **Imbalanced outcomes:** Repayment difficulty represented only about 8.1% of the training sample. I used stratified cross-validation and ROC AUC for model comparisons, rather than interpreting accuracy alone.
+- **Messy and incomplete data:** Some fields were highly missing, income contained extreme values, and `DAYS_EMPLOYED = 365243` was not a plausible employment duration. I incorporated explicit treatment of these issues into reusable data-preparation code.
+- **Consistent preprocessing:** Train/test differences and leakage could undermine evaluation. I reused transformations learned from training data and checked output consistency. Modeling preprocessing was built into the workflow.
+- **Choosing an actionable threshold:** A high AUC does not specify which applicants should be approved. I made threshold selection a separate analysis with transparent, simplified financial assumptions.
+- **Interpretability and fairness:** A prediction score does not automatically explain a decision or ensure equitable outcomes. I documented SHAP-based explanation, subgroup analysis, and risks that would require review before deployment.
 
-The EDA showed that missingness in several housing-related variables differed between applicants with and without repayment difficulty.
+## What I Learned
 
-Using the training data, the script identifies the five variables with the largest differences in missing rates between TARGET groups and creates binary missing-value indicators for them.
+This project strengthened my ability to connect **data exploration, reproducible preprocessing, statistical evaluation, and business decisions**. My most important learning was that model selection should not stop at a leaderboard score: stakeholders also need to understand how the model will be used, what assumptions drive its apparent value, and where human oversight remains necessary.
 
-The selected variables were:
+I also practiced presenting technical findings in a way a nontechnical audience can interrogate: stating the objective, explaining what was tested, reporting comparable metrics, and describing uncertainty and limitations without overstating the results.
 
-- `EMERGENCYSTATE_MODE`
-- `TOTALAREA_MODE`
-- `ENTRANCES_AVG`
-- `ENTRANCES_MODE`
-- `ENTRANCES_MEDI`
+## Repository Guide
 
-A value of 1 indicates that the original value is missing, while 0 indicates that it is present.
+| File | Purpose |
+|---|---|
+| `README.md` | Portfolio overview, results, business value, challenges, and lessons |
+| `data_preparation.R` | R data-cleaning and feature-engineering script |
+| `home_credit_modeling.qmd` | Python-based modeling experiments, model selection, tuning, and Kaggle submission |
+| `modeling_utils.py` | Reusable Python modeling utilities |
+| `Home Credit Default Risk Model Card.qmd` | Model card source: performance, threshold, explainability, fairness, and limitations |
+| `Home_Credit_Default_Risk_Model_Card.html` | Rendered model card (download or view locally; GitHub does not render HTML as a notebook) |
+| `.gitignore` | Excludes local raw and generated datasets |
 
-The variables are selected using the training data only, and the same missing indicators are then created in the test data.
+**Individual EDA notebook:** My exploratory work is discussed above. Add and link the individual EDA `.qmd`, `.ipynb`, `.Rmd`, or PDF file here once it is uploaded to this repository. The README should link to work that is actually present rather than to a missing file.
 
-### 5. Log-Transformed Income
+### Reproducing the Work
 
-The EDA identified extreme high-income values in `AMT_INCOME_TOTAL`.
+**Data:** Obtain the Home Credit Default Risk competition data from [Kaggle](https://www.kaggle.com/competitions/home-credit-default-risk). The datasets are not included in this repository. The current R script expects locally stored `application_train-1.csv` and `application_test.csv` in the paths specified by the script; adjust those paths to your environment if needed.
 
-The script creates:
-
-`LOG_INCOME = log(1 + AMT_INCOME_TOTAL)`
-
-This reduces the influence of extremely large income values while retaining the original income variable.
-
-### 6. Age Groups
-
-Because age showed a relationship with repayment difficulty in the EDA, the script also creates an age-group feature.
-
-The age thresholds are calculated from the training data only using the 25th, 50th, and 75th percentiles:
-
-- 25th percentile: approximately 33.98 years
-- 50th percentile: approximately 43.12 years
-- 75th percentile: approximately 53.89 years
-
-These same thresholds are reused when processing the test dataset.
-
-The resulting categories are:
-
-- Young
-- Lower_Middle
-- Upper_Middle
-- Older
-
-## Train/Test Consistency
-
-All preprocessing rules that require information from the data are learned from the training dataset and then reused on the test dataset.
-
-This prevents information from the test data from influencing preprocessing decisions.
-
-Final validation checks showed:
-
-- Training and test feature columns are identical after excluding `TARGET`: `TRUE`
-- Columns appearing only in training after excluding `TARGET`: none
-- Columns appearing only in test: none
-- Duplicate `SK_ID_CURR` values in training data: 0
-- Duplicate `SK_ID_CURR` values in test data: 0
-
-Final prepared data dimensions:
-
-- Training data: 307,511 rows × 132 columns
-- Test data: 48,744 rows × 131 columns
-
-The one-column difference occurs because `TARGET` is available only in the training dataset.
-
-## EDA Decisions Not Implemented
-
-The EDA also examined education level, income type, housing type, credit amount, and class imbalance.
-
-These variables were not given additional transformations in this script because they can remain as original predictors for later modeling.
-
-Supplementary tables were not joined because they were not part of the EDA used for this stage of the project.
-
-Class imbalance is also not modified during data preparation because it will be addressed during model training and evaluation rather than by changing the original target distribution at this stage.
-
-## Input Files
-
-The script uses:
-
-- `application_train-1.csv`
-- `application_test.csv`
-
-The data files are stored locally and are excluded from GitHub using `.gitignore`.
-
-## Output Files
-
-Running the script creates:
-
-- `application_train_prepared.csv`
-- `application_test_prepared.csv`
-
-These generated data files are also excluded from GitHub using `.gitignore`.
-
-## How to Run
-
-The project requires R and the `tidyverse` package.
-
-From the project directory, run:
+**Data preparation (R):** Install `tidyverse`, place the required datasets where the script expects them, and run:
 
 ```r
 source("data_preparation.R")
 ```
 
-The script will:
+The preparation process produces `application_train_prepared.csv` and `application_test_prepared.csv` and performs train/test consistency checks.
 
-1. Load the training and test datasets.
-2. Create the engineered features.
-3. Learn required preprocessing parameters from the training data.
-4. Apply the same transformations to the test data.
-5. Check train/test consistency.
-6. Check for duplicate applicant IDs.
-7. Write the prepared datasets to CSV files.
+**Modeling (Python / Quarto):** Open `home_credit_modeling.qmd` in Positron or another Quarto-capable environment. Install its required packages, including `pandas`, `numpy`, and `scikit-learn`, and run the Python cells in order after preparing the datasets. The workflow generates a Kaggle prediction file, `home_credit_submission.csv`.
 
-## Project Files
+The notebooks and scripts contain the implementation details; readers should consult them for the exact environment and execution settings.
 
-## Project Files
+## Limitations and Responsible Use
 
-- `Home_Credit_Default_Risk_EDA.qmd` — exploratory data analysis
-- `data_preparation.R` — reusable data preparation and feature-engineering script
-- `home_credit_modeling.qmd` — modeling experiments, model comparison, tuning, and Kaggle submission
-- `modeling_utils.py` — reusable modeling functions for feature engineering, preprocessing, and model evaluation
-- `README.md` — project documentation
-- `.gitignore` — prevents raw and generated data files from being committed to GitHub
+- Results come from the Home Credit competition dataset and may not generalize to other time periods, populations, or loan products.
+- The 18% threshold is based on simplified economics and a sample-based illustration, not actual loan-level financial outcomes.
+- Credit decisions can have substantial consequences. Model explanations, fairness analysis, regulatory requirements, human review, and ongoing monitoring would be necessary before real-world deployment.
 
-## Modeling
-
-### Modeling
-
-The modeling notebook uses Python.
-
-Required Python packages include:
-
-- pandas
-- numpy
-- scikit-learn
-
-Open `home_credit_modeling.qmd` in Positron and run the Python code cells in order.
-
-The modeling notebook will:
-
-1. Load the prepared training and test datasets.
-2. Create additional engineered features.
-3. Build the preprocessing pipeline.
-4. Evaluate candidate models using 3-fold stratified cross-validation and ROC AUC.
-5. Tune the selected logistic regression model.
-6. Refit the final model using the full training dataset.
-7. Generate `home_credit_submission.csv` for Kaggle submission.
-
-### Models Evaluated
-
-Three modeling approaches were compared:
-
-- Logistic Regression: **Mean CV AUC = 0.7188**
-- Balanced Logistic Regression: **Mean CV AUC = 0.7138**
-- Random Forest: **Mean CV AUC = 0.7137**
-
-The baseline logistic regression achieved the highest mean cross-validation AUC among the initial candidate models.
-
-### Hyperparameter Tuning
-
-Randomized search was used to tune the logistic regression model. The best configuration was:
-
-- `C = 0.01`
-- `class_weight = None`
-
-The tuned logistic regression achieved a mean cross-validation ROC AUC of approximately **0.7308**.
-
-### Final Model and Kaggle Result
-
-The tuned logistic regression model was retrained using the full training dataset and used to generate predicted default probabilities for the Kaggle test set.
-
-The final Kaggle submission achieved:
-
-- **Public ROC AUC: 0.73969**
-- **Private ROC AUC: 0.73645**
-
-The Kaggle results were reasonably consistent with the cross-validation performance, suggesting that the final model generalized well to unseen data.
-
-## Final Model Card
-
-The final model card summarizes the Home Credit default-risk model, including model performance, business decision-threshold analysis, SHAP explainability, adverse-action mapping, fairness analysis, and deployment limitations.
-
-### Key Results
-- Final model: Tuned Logistic Regression
-- Mean CV ROC AUC: 0.7308
-- Kaggle Public AUC: 0.73969
-- Kaggle Private AUC: 0.73645
-- Selected decision threshold: 18%
-- Approval rate at selected threshold: 91.24%
-
-[View the Final Model Card](Home_Credit_Default_Risk_Model_Card.html)
+**Detailed technical documentation:** See [Model Card source](Home%20Credit%20Default%20Risk%20Model%20Card.qmd) and [Modeling notebook](home_credit_modeling.qmd).
