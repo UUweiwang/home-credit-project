@@ -97,4 +97,4 @@ The notebooks and scripts contain the implementation details; readers should con
 - The 18% threshold is based on simplified economics and a sample-based illustration, not actual loan-level financial outcomes.
 - Credit decisions can have substantial consequences. Model explanations, fairness analysis, regulatory requirements, human review, and ongoing monitoring would be necessary before real-world deployment.
 
-**Detailed technical documentation:** See [Model Card source](Home%20Credit%20Default%20Risk%20Model%20Card.qmd) and [Modeling notebook](home_credit_modeling.qmd).
+**Detailed technical documentation:** See [Model Card source](Home%20Credit%20Default%20Risk%20Model%20Card.qmd) and [EDA Notebook](Home_Credit_Default_Risk_EDA_Portfolio.qmd)
