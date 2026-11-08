@@ -119,7 +119,7 @@ Applicants with TARGET = 1 generally have more missing information in several ho
 
 ### AMT_INCOME_TOTAL by TARGET 
 
-examined whether applicant income differs between applicants with and without repayment difficulties.
+I examined whether applicant income differs between applicants with and without repayment difficulties.
 
 ```{r}
 # Compare applicant income between the two TARGET groups.
@@ -329,7 +329,7 @@ housing_summary <- credit %>%
 
 housing_summary
 ```
-Applicants living in rented apartments or with parents have higher repayment difficulty rates than those living in a house or apartment. This suggests that housing type may be associated with repayment risk, This is a descriptive relationship and should not be interpreted as causal.
+Applicants living in rented apartments or with parents have higher repayment difficulty rates than those living in a house or apartment. This suggests that housing type may be associated with repayment risk. However, this is a descriptive relationship and should not be interpreted as causal.
 
 ## 7. Results and Key Findings
 
