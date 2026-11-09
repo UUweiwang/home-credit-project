@@ -1,6 +1,6 @@
 ---
 title: "Home Credit Default Risk Model Card"
-author: "Wei Wang"
+author: "Victoria Wang"
 
 format:
   html:
