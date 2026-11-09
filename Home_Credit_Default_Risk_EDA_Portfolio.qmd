@@ -1,6 +1,6 @@
 ---
 title: "Home Credit Default Risk - Exploratory Data Analysis"
-author: "Wei Wang"
+author: "Victoria Wang"
 format:
   html:
     embed-resources: true
