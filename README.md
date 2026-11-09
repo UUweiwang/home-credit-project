@@ -1,6 +1,6 @@
 # Home Credit Default Risk | Credit Risk Analytics Portfolio
 
-**Author:** Wei Wang  
+**Author:** Victoria Wang 
 **Project:** Home Credit Default Risk (Kaggle)  
 **Focus:** Exploratory Data Analysis · Feature Engineering · Predictive Modeling · Model Explainability · Business Decision Support
 
